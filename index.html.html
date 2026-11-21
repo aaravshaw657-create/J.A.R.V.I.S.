@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>J.A.R.V.I.S. — Personal Voice HUD</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@500;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-deep: #040812;
+      --panel-bg: rgba(9, 18, 36, 0.78);
+      --cyan: #00e5ff;
+      --cyan-dim: rgba(0, 229, 255, 0.22);
+      --amber: #f59e0b;
+      --emerald: #10b981;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Inter', system-ui, sans-serif;
+      background: radial-gradient(circle at 50% 18%, #0c1f3f 0%, #040812 62%, #020409 100%);
+      color: #e2f1ff;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    .font-hud { font-family: 'Orbitron', sans-serif; }
+    .font-mono-hud { font-family: 'JetBrains Mono', monospace; }
+
+    /* Subtle HUD grid */
+    .hud-grid {
+      background-image:
+        linear-gradient(rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px);
+      background-size: 36px 36px;
+    }
+
+    /* Arc Reactor Animations */
+    @keyframes spinSlow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes spinReverse {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    @keyframes pulseCore {
+      0%, 100% { transform: scale(1); opacity: 0.85; }
+      50% { transform: scale(1.08); opacity: 1; }
+    }
+    @keyframes speakWave {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 24px rgba(0, 229, 255, 0.45); }
+      50% { transform: scale(1.14); box-shadow: 0 0 46px rgba(0, 229, 255, 0.9); }
+    }
+    .ring-outer { animation: spinSlow 24s linear infinite; transform-origin: center; }
+    .ring-mid { animation: spinReverse 14s linear infinite; transform-origin: center; }
+    .core-idle { animation: pulseCore 3s ease-in-out infinite; }
+    .core-listening {
+      box-shadow: 0 0 38px rgba(16, 185, 129, 0.75);
+      border-color: #10b981 !important;
+    }
+    .core-speaking {
+      animation: speakWave 0.7s ease-in-out infinite;
+    }
+    .core-thinking {
+      box-shadow: 0 0 36px rgba(245, 158, 11, 0.75);
+      border-color: #f59e0b !important;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(4, 8, 18, 0.5); }
+    ::-webkit-scrollbar-thumb { background: rgba(0, 229, 255, 0.25); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.45); }
+  </style>
+</head>
+<body class="hud-grid flex flex-col min-h-screen">
+
+  <!-- Top Telemetry Bar -->
+  <header class="border-b border-cyan-500/20 bg-slate-950/70 backdrop-blur-md sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-3 sm:px-5 py-2.5 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00e5ff] shrink-0"></span>
+        <div class="min-w-0">
+          <h1 class="font-hud text-sm sm:text-base font-bold tracking-widest text-cyan-300 truncate">J.A.R.V.I.S.</h1>
+          <p id="telemetry-sub" class="font-mono-hud text-[11px] text-cyan-200/60 truncate">DEMO MODE · VOICE READY</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <span id="hud-clock" class="hidden sm:inline font-mono-hud text-xs text-cyan-300/80 px-2.5 py-1 rounded border border-cyan-500/20 bg-cyan-950/30">--:--:--</span>
+        <button id="btn-mute" type="button" class="px-2.5 py-1.5 rounded-lg border border-cyan-500/30 bg-cyan-950/40 hover:bg-cyan-900/50 text-xs font-medium text-cyan-200 transition cursor-pointer" title="Toggle voice replies">
+          🔊 Voice On
+        </button>
+        <button id="btn-clear" type="button" class="px-2.5 py-1.5 rounded-lg border border-slate-700 bg-slate-900/70 hover:bg-slate-800 text-xs font-medium text-slate-300 transition cursor-pointer" title="Clear conversation">
+          Clear
+        </button>
+        <button id="btn-open-settings" type="button" class="px-3 py-1.5 rounded-lg border border-cyan-400/50 bg-cyan-500/15 hover:bg-cyan-500/25 text-xs font-semibold text-cyan-200 transition cursor-pointer">
+          ⚙ API &amp; Setup
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-5 py-4 flex flex-col gap-4">
+
+    <!-- Arc Reactor & Voice Control Panel -->
+    <section class="rounded-2xl border border-cyan-500/25 bg-slate-950/65 backdrop-blur-md p-4 sm:p-5 flex flex-col md:flex-row items-center gap-5 shadow-[0_0_40px_rgba(0,229,255,0.06)]">
+      <!-- Arc Reactor Visual -->
+      <div class="relative w-32 h-32 sm:w-36 sm:h-36 shrink-0 flex items-center justify-center">
+        <svg viewBox="0 0 160 160" class="w-full h-full">
+          <defs>
+            <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#00e5ff" stop-opacity="0.7" />
+              <stop offset="100%" stop-color="#00e5ff" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <circle cx="80" cy="80" r="72" fill="url(#coreGlow)" opacity="0.35" />
+          <circle cx="80" cy="80" r="68" fill="none" stroke="#00e5ff" stroke-opacity="0.3" stroke-width="1.5" stroke-dasharray="14 8 4 8" class="ring-outer" />
+          <circle cx="80" cy="80" r="54" fill="none" stroke="#38bdf8" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="26 12" class="ring-mid" />
+          <circle cx="80" cy="80" r="42" fill="none" stroke="#00e5ff" stroke-opacity="0.25" stroke-width="1" />
+        </svg>
+        <button id="btn-core-mic" type="button" aria-label="Tap to speak to Jarvis" class="core-idle absolute w-20 h-20 rounded-full border-2 border-cyan-400/80 bg-slate-950/90 flex flex-col items-center justify-center text-cyan-200 hover:scale-105 transition cursor-pointer">
+          <span id="core-icon" class="text-xl leading-none">🎙️</span>
+          <span id="core-label" class="font-hud text-[9px] tracking-wider mt-1 text-cyan-300">TAP</span>
+        </button>
+      </div>
+
+      <!-- Controls & Status -->
+      <div class="flex-1 w-full flex flex-col gap-3 text-center md:text-left">
+        <div class="flex flex-wrap items-center justify-center md:justify-start gap-2">
+          <span id="state-badge" class="font-mono-hud text-xs px-2.5 py-1 rounded-full border border-cyan-400/40 bg-cyan-500/10 text-cyan-300">
+            STATUS: STANDBY
+          </span>
+          <span id="provider-badge" class="font-mono-hud text-xs px-2.5 py-1 rounded-full border border-amber-400/40 bg-amber-500/10 text-amber-300">
+            BRAIN: DEMO MODE
+          </span>
+        </div>
+
+        <p id="live-transcript" class="text-xs sm:text-sm text-cyan-100/80 min-h-[1.25rem] font-mono-hud">
+          Tap the Arc Reactor to speak, or turn on "Hey Jarvis" hands-free mode below.
+        </p>
+
+        <div class="flex flex-wrap items-center justify-center md:justify-start gap-2">
+          <button id="btn-wake-toggle" type="button" class="px-3.5 py-2 rounded-xl border border-emerald-400/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-xs sm:text-sm font-semibold text-emerald-200 transition cursor-pointer">
+            ▶ Enable "Hey Jarvis" Listening
+          </button>
+          <button id="btn-stop-speak" type="button" class="hidden px-3 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 hover:bg-rose-500/25 text-xs sm:text-sm font-semibold text-rose-200 transition cursor-pointer">
+            ■ Stop Speaking
+          </button>
+          <span id="mic-support-note" class="text-[11px] text-slate-400"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Action Chips -->
+    <section class="flex flex-wrap gap-2">
+      <button type="button" data-prompt="Good evening Jarvis. Give me a quick pep talk and share one creative idea we could work on today." class="quick-chip px-3 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/35 hover:bg-cyan-900/50 text-xs text-cyan-200 transition cursor-pointer">
+        💡 Share an idea
+      </button>
+      <button type="button" data-prompt="Draft a polite email to my teacher asking for an extra day on my assignment." class="quick-chip px-3 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/35 hover:bg-cyan-900/50 text-xs text-cyan-200 transition cursor-pointer">
+        ✉️ Draft an email
+      </button>
+      <button type="button" data-prompt="Write a friendly WhatsApp message to my friend asking if they want to hang out this evening." class="quick-chip px-3 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/35 hover:bg-cyan-900/50 text-xs text-cyan-200 transition cursor-pointer">
+        💬 Draft WhatsApp
+      </button>
+      <button type="button" data-prompt="Plan a focused 2-hour evening study and workout routine for me." class="quick-chip px-3 py-1.5 rounded-full border border-cyan-500/30 bg-cyan-950/35 hover:bg-cyan-900/50 text-xs text-cyan-200 transition cursor-pointer">
+        ⚡ Evening plan
+      </button>
+    </section>
+
+    <!-- Chat Log -->
+    <section id="chat-container" class="flex-1 min-h-[260px] max-h-[46vh] overflow-y-auto rounded-2xl border border-cyan-500/20 bg-slate-950/60 backdrop-blur-md p-3.5 sm:p-4 flex flex-col gap-3">
+      <!-- Messages rendered here -->
+    </section>
+
+    <!-- Text Input Bar -->
+    <form id="chat-form" class="flex items-center gap-2">
+      <input id="chat-input" type="text" autocomplete="off" placeholder="Talk or type to Jarvis... (e.g. 'Hey Jarvis, draft an email')" class="flex-1 rounded-xl border border-cyan-500/30 bg-slate-950/80 px-4 py-3 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400" />
+      <button type="submit" class="px-4 sm:px-5 py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-sm transition cursor-pointer shrink-0">
+        Send
+      </button>
+    </form>
+  </main>
+
+  <!-- Settings & API Key Modal -->
+  <div id="settings-modal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg rounded-2xl border border-cyan-400/40 bg-slate-900 text-slate-100 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      <div class="px-5 py-4 border-b border-cyan-500/20 flex items-center justify-between">
+        <h2 class="font-hud text-sm font-bold tracking-wider text-cyan-300">JARVIS CORE CONFIGURATION</h2>
+        <button id="btn-close-settings" type="button" class="text-slate-400 hover:text-white text-lg leading-none px-2 py-1 cursor-pointer">✕</button>
+      </div>
+
+      <div class="p-5 overflow-y-auto flex flex-col gap-4 text-sm">
+        <div>
+          <label for="cfg-provider" class="block text-xs font-semibold text-cyan-300 mb-1">AI Provider (100% Free Tiers Available)</label>
+          <select id="cfg-provider" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-400">
+            <option value="demo">Demo Mode (No API Key Needed)</option>
+            <option value="gemini">Google Gemini API (Free at aistudio.google.com)</option>
+            <option value="groq">Groq API (Free at console.groq.com)</option>
+          </select>
+        </div>
+
+        <div id="api-key-group" class="hidden flex-col gap-3">
+          <div>
+            <label for="cfg-apikey" class="block text-xs font-semibold text-cyan-300 mb-1">API Key (Stored locally in your browser only)</label>
+            <input id="cfg-apikey" type="password" placeholder="Paste your Gemini or Groq API key here..." class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-400" />
+            <p id="apikey-hint" class="text-[11px] text-slate-400 mt-1"></p>
+          </div>
+
+          <div>
+            <label for="cfg-model" class="block text-xs font-semibold text-cyan-300 mb-1">Model</label>
+            <select id="cfg-model" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-400">
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="cfg-voice" class="block text-xs font-semibold text-cyan-300 mb-1">Voice Accent</label>
+          <select id="cfg-voice" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-400">
+            <option value="auto">Auto (Prefer British English / Jarvis style)</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="cfg-persona" class="block text-xs font-semibold text-cyan-300 mb-1">Jarvis Personality &amp; Instructions</label>
+          <textarea id="cfg-persona" rows="4" class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-400"></textarea>
+        </div>
+      </div>
+
+      <div class="px-5 py-3.5 border-t border-cyan-500/20 bg-slate-950/60 flex items-center justify-end gap-2">
+        <button id="btn-cancel-settings" type="button" class="px-4 py-2 rounded-lg border border-slate-700 text-xs font-medium text-slate-300 hover:bg-slate-800 cursor-pointer">Cancel</button>
+        <button id="btn-save-settings" type="button" class="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold cursor-pointer">Save &amp; Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-page Toast -->
+  <div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl border border-cyan-400/40 bg-slate-900/95 text-xs font-medium text-cyan-200 shadow-lg"></div>
+
+  <script>
+    (function () {
+      const DEFAULT_PERSONA =
+        "You are J.A.R.V.I.S., my loyal, warm, slightly witty personal AI assistant. " +
+        "Keep spoken replies concise (2-4 sentences) unless I ask for detail. Show genuine warmth, encouragement, or playful humor. " +
+        "At the end of helpful replies, proactively offer one smart idea or next step of your own. " +
+        "If I ask you to write an email or WhatsApp message, output the ready-to-send message clearly.";
+
+      const MODEL_OPTIONS = {
+        gemini: [
+          { value: "gemini-2.5-flash", label: "gemini-2.5-flash (Recommended)" },
+          { value: "gemini-flash-latest", label: "gemini-flash-latest" },
+          { value: "gemini-2.0-flash", label: "gemini-2.0-flash" }
+        ],
+        groq: [
+          { value: "openai/gpt-oss-120b", label: "openai/gpt-oss-120b (Free Tier)" },
+          { value: "openai/gpt-oss-20b", label: "openai/gpt-oss-20b (Fast Free Tier)" },
+          { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "llama-4-scout-17b-16e-instruct" }
+        ]
+      };
+
+      const state = {
+        provider: "demo",
+        apiKey: "",
+        model: "gemini-2.5-flash",
+        voiceURI: "auto",
+        persona: DEFAULT_PERSONA,
+        voiceEnabled: true,
+        wakeMode: false,
+        awaitingCommandAfterWake: false,
+        isSpeaking: false,
+        isThinking: false,
+        messages: []
+      };
+
+      // DOM refs
+      const elClock = document.getElementById("hud-clock");
+      const elTelemetrySub = document.getElementById("telemetry-sub");
+      const elStateBadge = document.getElementById("state-badge");
+      const elProviderBadge = document.getElementById("provider-badge");
+      const elStatusDot = document.getElementById("status-dot");
+      const elCoreBtn = document.getElementById("btn-core-mic");
+      const elCoreIcon = document.getElementById("core-icon");
+      const elCoreLabel = document.getElementById("core-label");
+      const elTranscript = document.getElementById("live-transcript");
+      const elWakeToggle = document.getElementById("btn-wake-toggle");
+      const elStopSpeak = document.getElementById("btn-stop-speak");
+      const elMicNote = document.getElementById("mic-support-note");
+      const elChat = document.getElementById("chat-container");
+      const elChatForm = document.getElementById("chat-form");
+      const elChatInput = document.getElementById("chat-input");
+      const elMuteBtn = document.getElementById("btn-mute");
+      const elClearBtn = document.getElementById("btn-clear");
+      const elModal = document.getElementById("settings-modal");
+      const elOpenSettings = document.getElementById("btn-open-settings");
+      const elCloseSettings = document.getElementById("btn-close-settings");
+      const elCancelSettings = document.getElementById("btn-cancel-settings");
+      const elSaveSettings = document.getElementById("btn-save-settings");
+      const elCfgProvider = document.getElementById("cfg-provider");
+      const elApiKeyGroup = document.getElementById("api-key-group");
+      const elCfgApiKey = document.getElementById("cfg-apikey");
+      const elApiKeyHint = document.getElementById("apikey-hint");
+      const elCfgModel = document.getElementById("cfg-model");
+      const elCfgVoice = document.getElementById("cfg-voice");
+      const elCfgPersona = document.getElementById("cfg-persona");
+      const elToast = document.getElementById("toast");
+
+      let toastTimer = null;
+      function showToast(msg) {
+        elToast.textContent = msg;
+        elToast.classList.remove("hidden");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => elToast.classList.add("hidden"), 2800);
+      }
+
+      // Safe localStorage
+      function loadSettings() {
+        try {
+          const saved = localStorage.getItem("jarvis_hud_cfg_v1");
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed.provider) state.provider = parsed.provider;
+            if (typeof parsed.apiKey === "string") state.apiKey = parsed.apiKey;
+            if (parsed.model) state.model = parsed.model;
+            if (parsed.voiceURI) state.voiceURI = parsed.voiceURI;
+            if (parsed.persona) state.persona = parsed.persona;
+          }
+        } catch (e) { /* ignore storage errors */ }
+      }
+
+      function saveSettingsToStorage() {
+        try {
+          localStorage.setItem("jarvis_hud_cfg_v1", JSON.stringify({
+            provider: state.provider,
+            apiKey: state.apiKey,
+            model: state.model,
+            voiceURI: state.voiceURI,
+            persona: state.persona
+          }));
+        } catch (e) { /* ignore */ }
+      }
+
+      // Clock
+      function updateClock() {
+        const now = new Date();
+        elClock.textContent = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
+      setInterval(updateClock, 1000);
+      updateClock();
+
+      // Update HUD visuals based on state
+      function syncHUD() {
+        const isLiveApi = state.provider !== "demo" && state.apiKey.trim().length > 0;
+        const providerText = isLiveApi
+          ? (state.provider === "gemini" ? "GEMINI API" : "GROQ API")
+          : "DEMO MODE";
+
+        elProviderBadge.textContent = "BRAIN: " + providerText;
+        elProviderBadge.className = isLiveApi
+          ? "font-mono-hud text-xs px-2.5 py-1 rounded-full border border-emerald-400/40 bg-emerald-500/10 text-emerald-300"
+          : "font-mono-hud text-xs px-2.5 py-1 rounded-full border border-amber-400/40 bg-amber-500/10 text-amber-300";
+
+        elTelemetrySub.textContent = providerText + " · " + (state.voiceEnabled ? "VOICE ON" : "MUTED");
+
+        elCoreBtn.classList.remove("core-idle", "core-listening", "core-speaking", "core-thinking");
+        if (state.isThinking) {
+          elCoreBtn.classList.add("core-thinking");
+          elCoreIcon.textContent = "⚡";
+          elCoreLabel.textContent = "THINKING";
+          elStateBadge.textContent = "STATUS: PROCESSING";
+          elStatusDot.className = "w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b] shrink-0";
+        } else if (state.isSpeaking) {
+          elCoreBtn.classList.add("core-speaking");
+          elCoreIcon.textContent = "🔊";
+          elCoreLabel.textContent = "SPEAKING";
+          elStateBadge.textContent = "STATUS: SPEAKING";
+          elStatusDot.className = "w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_12px_#00e5ff] shrink-0";
+        } else if (state.wakeMode) {
+          elCoreBtn.classList.add("core-listening");
+          elCoreIcon.textContent = "🎙️";
+          elCoreLabel.textContent = state.awaitingCommandAfterWake ? "READY" : "LISTENING";
+          elStateBadge.textContent = state.awaitingCommandAfterWake
+            ? 'STATUS: COMMAND RECEIVED — SPEAK NOW'
+            : 'STATUS: LISTENING FOR "HEY JARVIS"';
+          elStatusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#10b981] shrink-0";
+        } else {
+          elCoreBtn.classList.add("core-idle");
+          elCoreIcon.textContent = "🎙️";
+          elCoreLabel.textContent = "TAP";
+          elStateBadge.textContent = "STATUS: STANDBY";
+          elStatusDot.className = "w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_10px_#00e5ff] shrink-0";
+        }
+
+        elWakeToggle.textContent = state.wakeMode
+          ? '■ Stop "Hey Jarvis" Listening'
+          : '▶ Enable "Hey Jarvis" Listening';
+        elWakeToggle.className = state.wakeMode
+          ? "px-3.5 py-2 rounded-xl border border-rose-400/40 bg-rose-500/15 hover:bg-rose-500/25 text-xs sm:text-sm font-semibold text-rose-200 transition cursor-pointer"
+          : "px-3.5 py-2 rounded-xl border border-emerald-400/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-xs sm:text-sm font-semibold text-emerald-200 transition cursor-pointer";
+
+        elMuteBtn.textContent = state.voiceEnabled ? "🔊 Voice On" : "🔇 Muted";
+        if (state.isSpeaking) {
+          elStopSpeak.classList.remove("hidden");
+        } else {
+          elStopSpeak.classList.add("hidden");
+        }
+      }
+
+      // Speech Synthesis (Jarvis Voice)
+      function populateVoices() {
+        if (!("speechSynthesis" in window)) return;
+        const voices = window.speechSynthesis.getVoices();
+        const prev = state.voiceURI;
+        elCfgVoice.innerHTML = '<option value="auto">Auto (Prefer British English / Jarvis style)</option>';
+        voices.forEach((v) => {
+          const opt = document.createElement("option");
+          opt.value = v.voiceURI;
+          opt.textContent = `${v.name} (${v.lang})`;
+          elCfgVoice.appendChild(opt);
+        });
+        elCfgVoice.value = prev;
+      }
+      if ("speechSynthesis" in window) {
+        populateVoices();
+        window.speechSynthesis.onvoiceschanged = populateVoices;
+      }
+
+      function pickVoice() {
+        if (!("speechSynthesis" in window)) return null;
+        const voices = window.speechSynthesis.getVoices();
+        if (!voices.length) return null;
+        if (state.voiceURI !== "auto") {
+          const exact = voices.find((v) => v.voiceURI === state.voiceURI);
+          if (exact) return exact;
+        }
+        return (
+          voices.find((v) => v.lang.toLowerCase() === "en-gb" && /male|daniel|george|ryan|arthur|oliver/i.test(v.name)) ||
+          voices.find((v) => v.lang.toLowerCase().startsWith("en-gb")) ||
+          voices.find((v) => v.lang.toLowerCase().startsWith("en")) ||
+          voices[0]
+        );
+      }
+
+      function speakText(text) {
+        if (!state.voiceEnabled || !("speechSynthesis" in window)) return;
+        window.speechSynthesis.cancel();
+        const clean = text.replace(/[*_`#]/g, "").trim();
+        if (!clean) return;
+        const utter = new SpeechSynthesisUtterance(clean);
+        const chosen = pickVoice();
+        if (chosen) utter.voice = chosen;
+        utter.rate = 1.02;
+        utter.pitch = 0.96;
+        utter.onstart = () => { state.isSpeaking = true; syncHUD(); };
+        utter.onend = () => { state.isSpeaking = false; syncHUD(); };
+        utter.onerror = () => { state.isSpeaking = false; syncHUD(); };
+        window.speechSynthesis.speak(utter);
+      }
+
+      function stopSpeaking() {
+        if ("speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+        state.isSpeaking = false;
+        syncHUD();
+      }
+
+      // Render Chat
+      function copyText(str) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(str).then(() => showToast("Copied to clipboard")).catch(() => fallbackCopy(str));
+        } else {
+          fallbackCopy(str);
+        }
+      }
+      function fallbackCopy(str) {
+        const ta = document.createElement("textarea");
+        ta.value = str;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); showToast("Copied to clipboard"); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+
+      function renderMessages() {
+        elChat.innerHTML = "";
+        state.messages.forEach((m) => {
+          const wrap = document.createElement("div");
+          wrap.className = m.role === "user"
+            ? "self-end max-w-[88%] sm:max-w-[78%] rounded-2xl rounded-br-sm border border-cyan-400/30 bg-cyan-500/15 px-3.5 py-2.5 text-sm text-cyan-50"
+            : "self-start max-w-[92%] sm:max-w-[82%] rounded-2xl rounded-bl-sm border border-slate-700/80 bg-slate-900/90 px-3.5 py-2.5 text-sm text-slate-100";
+
+          const header = document.createElement("div");
+          header.className = "font-hud text-[10px] tracking-wider mb-1 " + (m.role === "user" ? "text-cyan-300" : "text-emerald-300");
+          header.textContent = m.role === "user" ? "YOU" : "J.A.R.V.I.S.";
+          wrap.appendChild(header);
+
+          const body = document.createElement("div");
+          body.className = "whitespace-pre-wrap leading-relaxed";
+          body.textContent = m.text;
+          wrap.appendChild(body);
+
+          if (m.role === "assistant" && m.actionType) {
+            const actionsRow = document.createElement("div");
+            actionsRow.className = "mt-2.5 pt-2 border-t border-slate-800 flex flex-wrap gap-2";
+
+            const copyBtn = document.createElement("button");
+            copyBtn.type = "button";
+            copyBtn.className = "px-2.5 py-1 rounded-lg border border-cyan-500/30 bg-cyan-950/50 hover:bg-cyan-900/60 text-xs text-cyan-200 cursor-pointer";
+            copyBtn.textContent = "📋 Copy Draft";
+            copyBtn.addEventListener("click", () => copyText(m.text));
+            actionsRow.appendChild(copyBtn);
+
+            if (m.actionType === "email") {
+              const mailLink = document.createElement("a");
+              mailLink.href = "mailto:?subject=" + encodeURIComponent("Message from Jarvis") + "&body=" + encodeURIComponent(m.text);
+              mailLink.className = "px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-950/50 hover:bg-emerald-900/60 text-xs text-emerald-200";
+              mailLink.textContent = "✉️ Open Email App";
+              actionsRow.appendChild(mailLink);
+            } else if (m.actionType === "whatsapp") {
+              const waLink = document.createElement("a");
+              waLink.href = "https://wa.me/?text=" + encodeURIComponent(m.text);
+              waLink.target = "_blank";
+              waLink.rel = "noopener noreferrer";
+              waLink.className = "px-2.5 py-1 rounded-lg border border-emerald-500/30 bg-emerald-950/50 hover:bg-emerald-900/60 text-xs text-emerald-200";
+              waLink.textContent = "💬 Open WhatsApp";
+              actionsRow.appendChild(waLink);
+            }
+            wrap.appendChild(actionsRow);
+          }
+
+          elChat.appendChild(wrap);
+        });
+        elChat.scrollTop = elChat.scrollHeight;
+      }
+
+      function detectActionType(userText) {
+        const lower = userText.toLowerCase();
+        if (/\b(email|mail)\b/.test(lower)) return "email";
+        if (/\b(whatsapp|message|text)\b/.test(lower)) return "whatsapp";
+        return null;
+      }
+
+      // Demo Brain (when no API key is pasted yet)
+      function demoReply(userText) {
+        const lower = userText.toLowerCase();
+        if (/\b(email|mail)\b/.test(lower)) {
+          return "Subject: Quick Request\n\nHi there,\n\nI hope you're doing well. Could I please have a little extra time to wrap up my work so I can submit my best effort?\n\nThank you!\n\n—\nJarvis Tip: Tap 'Open Email App' below to send it in one click, or paste a free Gemini/Groq API key in ⚙ API & Setup so I can write custom emails for any situation!";
+        }
+        if (/\b(whatsapp|message|text)\b/.test(lower)) {
+          return "Hey! Free this evening to catch up for a bit? Let me know what time works for you!\n\n—\nJarvis Tip: Tap 'Open WhatsApp' below to send this right away.";
+        }
+        if (/\b(idea|creative|suggest)\b/.test(lower)) {
+          return "Good to hear from you! One fun idea: let's set a 25-minute sprint right now for your top priority, followed by a 5-minute break—small wins build serious momentum. What's the #1 thing on your mind today? (Add your free Gemini or Groq key in ⚙ API & Setup anytime to unlock my full AI brain.)";
+        }
+        if (/\b(plan|routine|schedule|study|workout)\b/.test(lower)) {
+          return "Here's a crisp 2-hour block: 45 minutes deep focus, 10 minutes stretch and water, 40 minutes workout, and 25 minutes light review. Want me to adjust the timing? Add a free Gemini or Groq API key in ⚙ API & Setup for personalized plans.";
+        }
+        return "I'm online in Demo Mode and ready to assist! Right now I can speak back, draft quick messages, and respond to 'Hey Jarvis' while this tab is open. Paste a free Gemini or Groq API key in ⚙ API & Setup so I can think freely, remember our chat, and brainstorm real ideas with you.";
+      }
+
+      // Live API calls
+      async function callGemini(history) {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(state.model)}:generateContent`;
+        const contents = history.slice(-10).map((m) => ({
+          role: m.role === "user" ? "user" : "model",
+          parts: [{ text: m.text }]
+        }));
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": state.apiKey.trim()
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: state.persona }] },
+            contents
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error((data && data.error && data.error.message) || `Gemini HTTP ${res.status}`);
+        }
+        const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!reply) throw new Error("Empty response from Gemini.");
+        return reply;
+      }
+
+      async function callGroq(history) {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + state.apiKey.trim()
+          },
+          body: JSON.stringify({
+            model: state.model,
+            messages: [
+              { role: "system", content: state.persona },
+              ...history.slice(-10).map((m) => ({
+                role: m.role === "user" ? "user" : "assistant",
+                content: m.text
+              }))
+            ]
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error((data && data.error && data.error.message) || `Groq HTTP ${res.status}`);
+        }
+        const reply = data?.choices?.[0]?.message?.content;
+        if (!reply) throw new Error("Empty response from Groq.");
+        return reply;
+      }
+
+      async function handleUserMessage(rawText) {
+        const text = rawText.trim();
+        if (!text || state.isThinking) return;
+
+        state.messages.push({ role: "user", text });
+        state.isThinking = true;
+        renderMessages();
+        syncHUD();
+
+        const actionType = detectActionType(text);
+        let replyText = "";
+        try {
+          if (state.provider === "gemini" && state.apiKey.trim()) {
+            replyText = await callGemini(state.messages);
+          } else if (state.provider === "groq" && state.apiKey.trim()) {
+            replyText = await callGroq(state.messages);
+          } else {
+            replyText = demoReply(text);
+          }
+        } catch (err) {
+          replyText = `I hit a connection error (${err.message}). Double-check your API key or try switching models in ⚙ API & Setup.`;
+        }
+
+        state.isThinking = false;
+        state.messages.push({ role: "assistant", text: replyText, actionType });
+        renderMessages();
+        syncHUD();
+        speakText(replyText);
+      }
+
+      // Speech Recognition ("Hey Jarvis" + One-tap Mic)
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      let wakeRec = null;
+      let singleRec = null;
+
+      if (!SpeechRec) {
+        elMicNote.textContent = "Speech recognition isn't supported in this browser (try Chrome). You can still type below.";
+      }
+
+      function processTranscript(transcript) {
+        const clean = transcript.trim();
+        if (!clean) return;
+        const wakeMatch = clean.match(/\b(?:hey\s+)?jarvis\b[,:\s]*(.*)/i);
+        if (wakeMatch) {
+          const remainder = (wakeMatch[1] || "").trim();
+          if (remainder.length > 0) {
+            state.awaitingCommandAfterWake = false;
+            elTranscript.textContent = `Heard: "${remainder}"`;
+            handleUserMessage(remainder);
+          } else {
+            state.awaitingCommandAfterWake = true;
+            elTranscript.textContent = 'Yes? Listening for your command...';
+            speakText("Yes, I'm listening.");
+            syncHUD();
+          }
+        } else if (state.awaitingCommandAfterWake) {
+          state.awaitingCommandAfterWake = false;
+          elTranscript.textContent = `Heard: "${clean}"`;
+          handleUserMessage(clean);
+        } else {
+          elTranscript.textContent = `Heard "${clean}" (say "Hey Jarvis" first in wake mode)`;
+        }
+      }
+
+      function startWakeListening() {
+        if (!SpeechRec) {
+          showToast("Voice recognition requires Chrome or Edge.");
+          return;
+        }
+        stopSingleListening();
+        state.wakeMode = true;
+        state.awaitingCommandAfterWake = false;
+        syncHUD();
+
+        wakeRec = new SpeechRec();
+        wakeRec.continuous = true;
+        wakeRec.interimResults = false;
+        wakeRec.lang = "en-US";
+
+        wakeRec.onresult = (event) => {
+          const last = event.results[event.results.length - 1];
+          if (last && last.isFinal) {
+            processTranscript(last[0].transcript);
+          }
+        };
+
+        wakeRec.onerror = (event) => {
+          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            state.wakeMode = false;
+            elTranscript.textContent = "Microphone permission blocked. Allow mic access in browser settings.";
+            syncHUD();
+          }
+        };
+
+        wakeRec.onend = () => {
+          if (state.wakeMode) {
+            try { wakeRec.start(); } catch (e) { /* ignore rapid restart */ }
+          }
+        };
+
+        try {
+          wakeRec.start();
+          elTranscript.textContent = 'Listening... say "Hey Jarvis" followed by your request.';
+        } catch (e) {
+          state.wakeMode = false;
+          syncHUD();
+        }
+      }
+
+      function stopWakeListening() {
+        state.wakeMode = false;
+        state.awaitingCommandAfterWake = false;
+        if (wakeRec) {
+          try { wakeRec.onend = null; wakeRec.stop(); } catch (e) {}
+          wakeRec = null;
+        }
+        elTranscript.textContent = "Standby. Tap the Arc Reactor or enable 'Hey Jarvis' listening.";
+        syncHUD();
+      }
+
+      function stopSingleListening() {
+        if (singleRec) {
+          try { singleRec.stop(); } catch (e) {}
+          singleRec = null;
+        }
+      }
+
+      function startSingleListening() {
+        if (!SpeechRec) {
+          showToast("Voice recognition requires Chrome or Edge.");
+          return;
+        }
+        if (state.wakeMode) {
+          stopWakeListening();
+        }
+        stopSpeaking();
+        singleRec = new SpeechRec();
+        singleRec.continuous = false;
+        singleRec.interimResults = false;
+        singleRec.lang = "en-US";
+        elStateBadge.textContent = "STATUS: LISTENING (SPEAK NOW)";
+        elTranscript.textContent = "Listening for your voice...";
+        elCoreBtn.classList.add("core-listening");
+
+        singleRec.onresult = (event) => {
+          const text = event.results[0][0].transcript;
+          elTranscript.textContent = `Heard: "${text}"`;
+          handleUserMessage(text);
+        };
+        singleRec.onerror = () => {
+          elTranscript.textContent = "Didn't catch that. Tap the Arc Reactor to try again.";
+          syncHUD();
+        };
+        singleRec.onend = () => {
+          singleRec = null;
+          syncHUD();
+        };
+        try {
+          singleRec.start();
+        } catch (e) {
+          syncHUD();
+        }
+      }
+
+      // Settings Modal Logic
+      function populateModelSelect(provider, selectedModel) {
+        elCfgModel.innerHTML = "";
+        const list = MODEL_OPTIONS[provider] || [];
+        list.forEach((m) => {
+          const opt = document.createElement("option");
+          opt.value = m.value;
+          opt.textContent = m.label;
+          elCfgModel.appendChild(opt);
+        });
+        if (selectedModel && list.some((m) => m.value === selectedModel)) {
+          elCfgModel.value = selectedModel;
+        }
+      }
+
+      function syncModalProviderUI() {
+        const p = elCfgProvider.value;
+        if (p === "demo") {
+          elApiKeyGroup.classList.add("hidden");
+          elApiKeyGroup.classList.remove("flex");
+        } else {
+          elApiKeyGroup.classList.remove("hidden");
+          elApiKeyGroup.classList.add("flex");
+          populateModelSelect(p, state.model);
+          elApiKeyHint.textContent = p === "gemini"
+            ? "Get a free key at aistudio.google.com (no credit card required)."
+            : "Get a free key at console.groq.com (no credit card required).";
+        }
+      }
+
+      function openSettings() {
+        elCfgProvider.value = state.provider;
+        elCfgApiKey.value = state.apiKey;
+        elCfgVoice.value = state.voiceURI;
+        elCfgPersona.value = state.persona;
+        syncModalProviderUI();
+        elModal.classList.remove("hidden");
+      }
+
+      function closeSettings() {
+        elModal.classList.add("hidden");
+      }
+
+      elCfgProvider.addEventListener("change", syncModalProviderUI);
+      elOpenSettings.addEventListener("click", openSettings);
+      elCloseSettings.addEventListener("click", closeSettings);
+      elCancelSettings.addEventListener("click", closeSettings);
+      elSaveSettings.addEventListener("click", () => {
+        state.provider = elCfgProvider.value;
+        state.apiKey = elCfgApiKey.value.trim();
+        if (state.provider !== "demo") {
+          state.model = elCfgModel.value;
+        }
+        state.voiceURI = elCfgVoice.value;
+        state.persona = elCfgPersona.value.trim() || DEFAULT_PERSONA;
+        saveSettingsToStorage();
+        closeSettings();
+        syncHUD();
+        showToast("Jarvis settings saved");
+      });
+
+      // Other UI listeners
+      elCoreBtn.addEventListener("click", startSingleListening);
+      elWakeToggle.addEventListener("click", () => {
+        if (state.wakeMode) stopWakeListening();
+        else startWakeListening();
+      });
+      elStopSpeak.addEventListener("click", stopSpeaking);
+      elMuteBtn.addEventListener("click", () => {
+        state.voiceEnabled = !state.voiceEnabled;
+        if (!state.voiceEnabled) stopSpeaking();
+        syncHUD();
+      });
+      elClearBtn.addEventListener("click", () => {
+        state.messages = [{
+          role: "assistant",
+          text: "Memory cleared. Ready whenever you are—just say 'Hey Jarvis' or type below."
+        }];
+        renderMessages();
+        showToast("Conversation cleared");
+      });
+
+      elChatForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const val = elChatInput.value;
+        elChatInput.value = "";
+        handleUserMessage(val);
+      });
+
+      document.querySelectorAll(".quick-chip").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const prompt = btn.getAttribute("data-prompt");
+          if (prompt) handleUserMessage(prompt);
+        });
+      });
+
+      // Init
+      loadSettings();
+      state.messages = [{
+        role: "assistant",
+        text: "Good evening. J.A.R.V.I.S. online. Tap the Arc Reactor or enable 'Hey Jarvis' listening to talk—and whenever you're ready, paste your free Gemini or Groq API key in ⚙ API & Setup to unlock my full AI brain."
+      }];
+      renderMessages();
+      syncHUD();
+    })();
+  </script>
+</body>
+</html>
